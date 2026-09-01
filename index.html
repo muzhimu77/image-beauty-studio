@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>数字图像处理工具</title>
+  <!-- 引入Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入Font Awesome图标 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+  <style>
+    /* 裁剪框样式 */
+    #crop-box {
+      transition: width 0.1s, height 0.1s, top 0.1s, left 0.1s;
+    }
+    .crop-handle:hover {
+      background-color: #0284c7;
+      transform: scale(1.2);
+    }
+    /* 双栏预览同步滚动 */
+    .preview-container {
+      overflow: auto;
+    }
+    /* 曲线调整画布样式（修改后，强制正方形） */
+    #curve-canvas {
+      width: 100%;
+      height: auto;
+      aspect-ratio: 1/1;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      margin: 10px 0;
+      cursor: crosshair;
+      display: block;
+    }
+    /* HSL通道选择样式 */
+    .hsl-channel-btn {
+      padding: 4px 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      margin: 0 4px 8px 0;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .hsl-channel-btn.active {
+      background-color: #3b82f6;
+      color: white;
+      border-color: #3b82f6;
+    }
+     /* 添加文字框的样式addbyLiuxiang */
+    .text-box {
+	  white-space: nowrap;
+	  user-select: none;
+	  transition: all 0.1s;
+	  font-family: "黑体", "宋体", "微软雅黑", sans-serif;
+	  z-index: 10; /* 确保文字框在图像上方 */
+	}
+	/* 激活状态样式 */
+	.text-box.border-red-500 {
+	  border-color: #ef4444; /* 红色边框标识激活状态 */
+	}
+	.text-box.bg-red-200\/30 {
+	  background-color: rgba(254, 202, 202, 0.3); /* 红色背景标识激活状态 */
+	}
+	/* CSS 虚线框样式*/
+	.editable-textbox {
+	  border: 1px dashed #ccc; /* 蓝色虚线框，匹配图二效果 */
+	  padding: 2px 5px;
+	  min-width: 50px;
+	  min-height: 20px;
+	  line-height: 1.5;
+	  z-index: 999;
+	  background: transparent;
+	  outline: none; /* 取消聚焦时的默认轮廓，避免双重边框 */
+	}
+	/* 激活状态的文字框虚线样式 */
+	.editable-textbox:focus, .editable-textbox:hover {
+	  border: 1px dashed #0284c7;
+	}
+	/*补充删除按钮 CSS 样式*/
+	.text-delete-btn {
+	  background: white;
+	  border-radius: 50%;
+	  width: 16px;
+	  height: 16px;
+	  display: flex;
+	  align-items: center;
+	  justify-content: center;
+	  font-size: 12px;
+	  box-shadow: 0 0 2px rgba(0,0,0,0.3);
+	  }
+	  
+	  /* 文字内容输入框的焦点样式 */
+	#text-content:focus {
+      border-color: #0284c7;
+      box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.2);
+      outline: none;
+	}
+	/* 其他输入框的焦点样式（可选，保持视觉一致） */
+	#text-size:focus,
+	#text-opacity:focus,
+	#text-font:focus,
+	#text-color:focus {
+     border-color: #0284c7;
+     box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.2);
+     outline: none;
+	}
+  </style>
+</head>
+<body class="flex flex-col h-screen bg-gray-100 overflow-hidden">
+  <!-- 顶部菜单栏 -->
+  <div class="bg-gray-800 text-white p-1">
+    <div class="flex items-center justify-between px-3 py-2">
+      <!-- 左侧文件菜单 -->
+      <div class="flex items-center space-x-4">
+        <button id="open-img" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition flex items-center">
+          <i class="fa-solid fa-image mr-2"></i>打开图像
+        </button>
+        <button id="save-img" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition flex items-center">
+          <i class="fa-solid fa-save mr-2"></i>保存图像
+        </button>
+        <button id="exit-app" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition flex items-center">
+          <i class="fa-solid fa-sign-out mr-2"></i>退出
+        </button>
+      </div>
+      
+      <!-- 右侧控制区 -->
+      <div class="flex items-center space-x-4">
+        <!-- 缩放控制 -->
+        <div class="flex items-center bg-gray-700 rounded p-1">
+          <button id="zoom-out" class="px-2 py-1 rounded hover:bg-gray-600 transition">
+            <i class="fa-solid fa-minus"></i>
+          </button>
+          <span id="zoom-level" class="px-2 py-1 min-w-[40px] text-center">100%</span>
+          <button id="zoom-in" class="px-2 py-1 rounded hover:bg-gray-600 transition">
+            <i class="fa-solid fa-plus"></i>
+          </button>
+        </div>
+        
+        <!-- 撤销/重做 -->
+        <div class="flex items-center space-x-1">
+          <button id="undo" class="p-2 rounded hover:bg-gray-700 transition" title="撤销">
+            <i class="fa-solid fa-rotate-left"></i>
+          </button>
+          <button id="redo" class="p-2 rounded hover:bg-gray-700 transition" title="重做">
+            <i class="fa-solid fa-rotate-right"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 功能标签栏 -->
+    <div class="flex overflow-x-auto py-2 px-3 bg-gray-700 border-t border-gray-600">
+      <!-- 基础功能区 -->
+      <button class="func-btn whitespace-nowrap px-3 py-1.5 mx-0.5 rounded text-sm text-gray-100 hover:bg-gray-600" data-func="crop">
+        <i class="fa-solid fa-crop mr-1"></i>裁剪
+      </button>
+      <button class="func-btn whitespace-nowrap px-3 py-1.5 mx-0.5 rounded text-sm text-gray-100 hover:bg-gray-600" data-func="rotate">
+        <i class="fa-solid fa-rotate mr-1"></i>旋转
+      </button>
+      <button class="func-btn whitespace-nowrap px-3 py-1.5 mx-0.5 rounded text-sm text-gray-100 hover:bg-gray-600" data-func="light-adjust">
+        <i class="fa-solid fa-sun mr-1"></i>基础光影调节
+      </button>
+      <button class="func-btn whitespace-nowrap px-3 py-1.5 mx-0.5 rounded text-sm text-gray-100 hover:bg-gray-600" data-func="curve">
+        <i class="fa-solid fa-wave-square mr-1"></i>曲线
+      </button>
+      <button class="func-btn whitespace-nowrap px-3 py-1.5 mx-0.5 rounded text-sm text-gray-100 hover:bg-gray-600" data-func="histogram">
+        <i class="fa-solid fa-chart-bar mr-1"></i>直方图均衡化
+      </button>
+      <button class="func-btn whitespace-nowrap px-3 py-1.5 mx-0.5 rounded text-sm text-gray-100 hover:bg-gray-600" data-func="saturation">
+        <i class="fa-solid fa-palette mr-1"></i>饱和度
+      </button>
+      <button class="func-btn whitespace-nowrap px-3 py-1.5 mx-0.5 rounded text-sm text-gray-100 hover:bg-gray-600" data-func="hsl">
+        <i class="fa-solid fa-circle-half-stroke mr-1"></i>HSL
+      </button>
+      <button class="func-btn whitespace-nowrap px-3 py-1.5 mx-0.5 rounded text-sm text-gray-100 hover:bg-gray-600" data-func="temp">
+        <i class="fa-solid fa-temperature-half mr-1"></i>色温
+      </button>
+      <button class="func-btn whitespace-nowrap px-3 py-1.5 mx-0.5 rounded text-sm text-gray-100 hover:bg-gray-600" data-func="tint">
+        <i class="fa-solid fa-paintbrush mr-1"></i>色调
+      </button>
+      <button class="func-btn whitespace-nowrap px-3 py-1.5 mx-0.5 rounded text-sm text-gray-100 hover:bg-gray-600" data-func="sharpen">
+        <i class="fa-solid fa-magic mr-1"></i>锐化
+      </button>
+      <button class="func-btn whitespace-nowrap px-3 py-1.5 mx-0.5 rounded text-sm text-gray-100 hover:bg-gray-600" data-func="smooth">
+        <i class="fa-solid fa-wind mr-1"></i>平滑
+      </button>
+      <button class="func-btn whitespace-nowrap px-3 py-1.5 mx-0.5 rounded text-sm text-gray-100 hover:bg-gray-600" data-func="text">
+        <i class="fa-solid fa-font mr-1"></i>文字
+      </button>
+
+      <!-- 高级功能区 -->
+      <div class="h-6 border-r border-gray-600 mx-1"></div>
+      <button class="func-btn whitespace-nowrap px-3 py-1.5 mx-0.5 rounded text-sm text-gray-100 hover:bg-gray-600" data-func="dehaze">
+        <i class="fa-solid fa-cloud-sun mr-1"></i>去雾
+      </button>
+      <button class="func-btn whitespace-nowrap px-3 py-1.5 mx-0.5 rounded text-sm text-gray-100 hover:bg-gray-600" data-func="watermark">
+        <i class="fa-solid fa-stamp mr-1"></i>水印
+      </button>
+      <button class="func-btn whitespace-nowrap px-3 py-1.5 mx-0.5 rounded text-sm text-gray-100 hover:bg-gray-600" data-func="beauty">
+        <i class="fa-solid fa-face-smile-beam mr-1"></i>美颜滤镜
+      </button>
+    </div>
+  </div>
+
+  <!-- 中间主体区：双栏预览 + 右侧参数面板 -->
+  <div class="flex-1 overflow-hidden flex">
+    <!-- 图像预览区（双栏对比） -->
+    <div class="flex-1 flex p-4 overflow-hidden">
+      <!-- 原图预览 -->
+      <div class="w-1/2 flex flex-col items-center preview-container">
+        <h3 class="font-bold text-gray-700 mb-2">原图</h3>
+        <div id="original-container" class="border-2 border-gray-300 rounded bg-gray-50 w-full h-full flex items-center justify-center overflow-hidden relative">
+          <img id="original-img" class="max-w-full max-h-full object-contain transition-transform duration-200" src="" alt="原图预览">
+          <!-- 裁剪框 -->
+          <div id="crop-box" class="absolute border-2 border-blue-500 bg-blue-200/30 hidden cursor-move" 
+               style="top: 50px; left: 50px; width: 300px; height: 200px;">
+            <div class="crop-handle top-left absolute w-3 h-3 bg-blue-600 rounded-full -top-2 -left-2 cursor-nwse-resize"></div>
+            <div class="crop-handle top-middle absolute w-3 h-3 bg-blue-600 rounded-full -top-2 left-1/2 -translate-x-1/2 cursor-ns-resize"></div>
+            <div class="crop-handle top-right absolute w-3 h-3 bg-blue-600 rounded-full -top-2 -right-2 cursor-nesw-resize"></div>
+            <div class="crop-handle middle-left absolute w-3 h-3 bg-blue-600 rounded-full top-1/2 -translate-y-1/2 -left-2 cursor-ew-resize"></div>
+            <div class="crop-handle middle-right absolute w-3 h-3 bg-blue-600 rounded-full top-1/2 -translate-y-1/2 -right-2 cursor-ew-resize"></div>
+            <div class="crop-handle bottom-left absolute w-3 h-3 bg-blue-600 rounded-full -bottom-2 -left-2 cursor-nesw-resize"></div>
+            <div class="crop-handle bottom-middle absolute w-3 h-3 bg-blue-600 rounded-full -bottom-2 left-1/2 -translate-x-1/2 cursor-ns-resize"></div>
+            <div class="crop-handle bottom-right absolute w-3 h-3 bg-blue-600 rounded-full -bottom-2 -right-2 cursor-nwse-resize"></div>
+          </div>
+          <div id="original-placeholder" class="text-gray-400 text-center px-4">
+            请打开一张图像进行编辑
+          </div>
+        </div>
+      </div>
+      
+      <!-- 处理后预览 -->
+      <div class="w-1/2 flex flex-col items-center ml-4 preview-container">
+        <h3 class="font-bold text-gray-700 mb-2">处理后</h3>
+        <div id="processed-container" class="border-2 border-gray-300 rounded bg-gray-50 w-full h-full flex items-center justify-center overflow-hidden relative">
+          <img id="processed-img" class="max-w-full max-h-full object-contain transition-transform duration-200" src="" alt="处理后预览">
+          <div id="processed-placeholder" class="text-gray-400 text-center px-4">
+            编辑后的图像将显示在这里
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧参数区（统一包裹所有功能面板） -->
+    <div id="param-panel" class="w-72 bg-white border-l border-gray-200 p-3 shadow-md hidden">
+      <h3 id="param-title" class="font-bold text-gray-700 mb-3 pb-2 border-b">参数调节</h3>
+
+      <!-- 1. 裁剪功能参数面板 -->
+      <div class="param-item hidden" data-func="crop">
+        <h4 class="font-semibold text-gray-600 mb-2">裁剪设置</h4>
+        <div class="grid grid-cols-2 gap-2 mb-4">
+          <button class="crop-ratio-btn p-2 border rounded hover:bg-gray-100" data-ratio="custom">自定义</button>
+          <button class="crop-ratio-btn p-2 border rounded hover:bg-gray-100" data-ratio="square">方形</button>
+          <button class="crop-ratio-btn p-2 border rounded hover:bg-gray-100" data-ratio="4:3">4:3</button>
+          <button class="crop-ratio-btn p-2 border rounded hover:bg-gray-100" data-ratio="16:9">16:9</button>
+          <button class="crop-ratio-btn p-2 border rounded hover:bg-gray-100" data-ratio="3:4">3:4</button>
+          <button class="crop-ratio-btn p-2 border rounded hover:bg-gray-100" data-ratio="9:16">9:16</button>
+        </div>
+        <div class="mb-2">
+          <label class="block text-sm text-gray-600 mb-1">宽度 (W)</label>
+          <input type="number" id="crop-width" class="w-full border rounded px-2 py-1" value="1000">
+        </div>
+        <div class="mb-3">
+          <label class="block text-sm text-gray-600 mb-1">高度 (H)</label>
+          <input type="number" id="crop-height" class="w-full border rounded px-2 py-1" value="800">
+        </div>
+        <button id="crop-apply" class="w-full py-2 bg-blue-500 text-white rounded hover:bg-blue-600">应用裁剪</button>
+        <button id="crop-sync" class="w-full py-2 bg-blue-400 text-white rounded hover:bg-blue-500 mt-2">设为原图</button>
+      </div>
+
+      <!-- 2. 旋转与翻转功能参数面板 -->
+      <div class="param-item hidden" data-func="rotate">
+        <h4 class="font-semibold text-gray-600 mb-2">旋转/翻转设置</h4>
+        <div class="mb-4 pb-3 border-b border-gray-200">
+          <div class="flex flex-wrap gap-2">
+            <button id="flip-vertical" class="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm">
+              <i class="fa-solid fa-arrows-rotate-vertical mr-1"></i>上下翻转
+            </button>
+            <button id="flip-horizontal" class="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm">
+              <i class="fa-solid fa-arrows-rotate-horizontal mr-1"></i>左右翻转
+            </button>
+            <button id="flip-both" class="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm">
+              <i class="fa-solid fa-arrows-rotate mr-1"></i>上下左右翻转
+            </button>
+          </div>
+        </div>
+        <div class="mb-4">
+          <div class="flex flex-wrap gap-2">
+            <button id="rotate-left" class="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm">
+              <i class="fa-solid fa-rotate-left mr-1"></i>左旋转90°
+            </button>
+            <button id="rotate-right" class="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm">
+              <i class="fa-solid fa-rotate-right mr-1"></i>右旋转90°
+            </button>
+            <button id="rotate-180" class="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm">
+              <i class="fa-solid fa-rotate mr-1"></i>旋转180°
+            </button>
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="block text-sm text-gray-600 mb-1">自由角度 (°)</label>
+          <input type="number" id="rotate-angle" class="w-full border rounded px-2 py-1" value="0" min="-180" max="180" step="1">
+        </div>
+        <button id="rotate-reset" class="w-full py-2 bg-blue-400 text-white rounded hover:bg-blue-500 mt-2 transition-colors">
+          <i class="fa-solid fa-undo mr-1"></i>重置
+        </button>
+        <button id="rotate-set-original" class="w-full py-2 bg-blue-400 text-white rounded hover:bg-blue-500 mt-2 transition-colors">
+          <i class="fa-solid fa-image mr-1"></i>设为原图
+        </button>
+      </div>
+
+      <!-- 3. 基础光影调节面板 -->
+      <div class="param-item hidden" data-func="light-adjust">
+        <h4 class="font-semibold text-gray-600 mb-2">基础光影调节</h4>
+        <div class="mb-3">
+          <label class="block text-gray-600 mb-1 text-sm">亮度（-30~30）</label>
+          <input type="range" id="brightness-slider" min="-30" max="30" value="0" class="w-full accent-blue-500">
+          <div class="flex justify-between text-xs text-gray-500 mt-1">
+            <span>暗</span>
+            <span id="brightness-value">当前：0</span>
+            <span>亮</span>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="block text-gray-600 mb-1 text-sm">光感（-100~100）</label>
+          <input type="range" id="light-sense-slider" min="-100" max="100" value="0" class="w-full accent-blue-500">
+          <div class="flex justify-between text-xs text-gray-500 mt-1">
+            <span>弱</span>
+            <span id="light-sense-value">当前：0</span>
+            <span>强</span>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="block text-gray-600 mb-1 text-sm">曝光（-5~5）</label>
+          <input type="range" id="exposure-slider" min="-5" max="5" value="0" class="w-full accent-blue-500">
+          <div class="flex justify-between text-xs text-gray-500 mt-1">
+            <span>欠曝</span>
+            <span id="exposure-value">当前：0</span>
+            <span>过曝</span>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="block text-gray-600 mb-1 text-sm">对比度（0.0~2.0）</label>
+          <input type="range" id="contrast-slider" min="0" max="200" value="100" class="w-full accent-blue-500">
+          <div class="flex justify-between text-sm text-gray-500 mt-1">
+            <span>低</span>
+            <span id="contrast-value">当前：1.0</span>
+            <span>高</span>
+          </div>
+        </div>
+        <button id="light-adjust-reset" class="w-full py-2 bg-blue-400 text-white rounded hover:bg-blue-500 mt-2 transition-colors">
+          <i class="fa-solid fa-undo mr-1"></i>重置
+        </button>
+        <button id="light-adjust-set-original" class="w-full py-2 bg-blue-400 text-white rounded hover:bg-blue-500 mt-2 transition-colors">
+          <i class="fa-solid fa-image mr-1"></i>设为原图
+        </button>
+      </div>
+
+      <!-- 4. 平滑参数面板 -->
+      <div class="param-item hidden" data-func="smooth">
+        <h4 class="font-semibold text-gray-600 mb-2">平滑设置</h4>
+        <label class="block text-gray-600 mb-1 text-sm">平滑强度（0~100）</label>
+        <input type="range" id="smooth-slider" min="0" max="100" value="30" class="w-full accent-blue-500">
+        <div class="flex justify-between text-sm text-gray-500 mt-1">
+          <span>弱</span>
+          <span id="smooth-value">当前：30</span>
+          <span>强</span>
+        </div>
+        <button id="smooth-apply" class="mt-3 w-full py-2 bg-blue-500 text-white rounded hover:bg-blue-600">应用平滑</button>
+      </div>
+
+      <!-- 5. 锐化参数面板 -->
+      <div class="param-item hidden" data-func="sharpen">
+        <h4 class="font-semibold text-gray-600 mb-2">锐化设置</h4>
+        <label class="block text-gray-600 mb-1 text-sm">锐化强度（0~100）</label>
+        <input type="range" id="sharpen-slider" min="0" max="100" value="30" class="w-full accent-blue-500">
+        <div class="flex justify-between text-sm text-gray-500 mt-1">
+          <span>弱</span>
+          <span id="sharpen-value">当前：30</span>
+          <span>强</span>
+        </div>
+        <button id="sharpen-apply" class="mt-3 w-full py-2 bg-blue-500 text-white rounded hover:bg-blue-600">应用锐化</button>
+      </div>
+
+      <!-- 6. 直方图均衡化参数面板 -->
+      <div class="param-item hidden" data-func="histogram">
+        <h4 class="font-semibold text-gray-600 mb-2">直方图均衡化</h4>
+        <label class="block text-gray-600 mb-1 text-sm">均衡化强度（0~100）</label>
+        <input type="range" id="histogram-slider" min="0" max="100" value="0" class="w-full accent-blue-500">
+        <div class="flex justify-between text-sm text-gray-500 mt-1">
+          <span>弱（原图）</span>
+          <span id="histogram-value">当前：0</span>
+          <span>强</span>
+        </div>
+      </div>
+
+      <!-- 7. 曲线调整参数面板 -->
+      <div class="param-item hidden" data-func="curve">
+        <h4 class="font-semibold text-gray-600 mb-2">曲线调整</h4>
+        <div class="curve-panel border rounded p-3">
+          <div class="flex justify-between items-center mb-2">
+            <label>预设(R):</label>
+            <select id="curve-preset" class="border rounded px-2 py-1 text-sm">
+              <option value="custom">自定</option>
+              <option value="linear">线性</option>
+              <option value="s-curve">增强对比</option>
+              <option value="lighten-shadows">提亮暗部</option>
+              <option value="darken-highlights">压暗高光</option>
+              <option value="add-red">增加红色</option>
+              <option value="add-cyan">增加青色</option>
+            </select>
+          </div>
+          <div class="flex justify-between items-center mb-2">
+            <label>通道(C):</label>
+            <select id="curve-channel" class="border rounded px-2 py-1 text-sm">
+              <option value="rgb">rgb（整体）</option>
+              <option value="r">红（红↔青）</option>
+              <option value="g">绿（绿↔品）</option>
+              <option value="b">蓝（蓝↔黄）</option>
+            </select>
+          </div>
+          <canvas id="curve-canvas" class="border rounded"></canvas>
+          <div class="flex justify-between mt-2 text-sm">
+            <div>
+              <label>输出(O):</label>
+              <input type="number" id="curve-output" class="border rounded w-16 px-2 py-1" value="128" min="0" max="255">
+            </div>
+            <div>
+              <label>输入(I):</label>
+              <input type="number" id="curve-input" class="border rounded w-16 px-2 py-1" value="128" min="0" max="255">
+            </div>
+          </div>
+          <div class="flex gap-2 mt-3">
+            <button id="curve-reset" class="flex-1 border rounded py-1 hover:bg-gray-100">重置</button>
+            <button id="curve-apply" class="flex-1 bg-blue-500 text-white rounded py-1 hover:bg-blue-600">设为原图</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 8. 饱和度参数面板 -->
+      <div class="param-item hidden" data-func="saturation">
+        <h4 class="font-semibold text-gray-600 mb-2">饱和度设置</h4>
+        <label class="block text-gray-600 mb-1 text-sm">饱和度（0~200）</label>
+        <input type="range" id="saturation-slider" min="0" max="200" value="100" class="w-full accent-blue-500">
+        <div class="flex justify-between text-sm text-gray-500 mt-1">
+          <span>灰度</span>
+          <span id="saturation-value">当前：100</span>
+          <span>饱和</span>
+        </div>
+      </div>
+
+      <!-- HSL参数面板 -->
+  <div class="param-item hidden" data-func="hsl">
+    <h4 class="font-semibold text-gray-600 mb-2">HSL调整</h4>
+    <div class="flex flex-wrap mb-3">
+      <div class="hsl-channel-btn active" data-channel="all">全图</div>
+      <div class="hsl-channel-btn" data-channel="red">红</div>
+      <div class="hsl-channel-btn" data-channel="green">绿</div>
+      <div class="hsl-channel-btn" data-channel="blue">蓝</div>
+      <div class="hsl-channel-btn" data-channel="yellow">黄</div>
+      <div class="hsl-channel-btn" data-channel="magenta">品</div>
+      <div class="hsl-channel-btn" data-channel="cyan">青</div>
+    </div>
+    <!-- 色相 -->
+    <div class="mb-2">
+      <label class="block text-sm text-gray-600 mb-1">色相（-180~180）</label>
+      <input type="range" id="hsl-hue" min="-180" max="180" value="0" class="w-full accent-blue-500">
+      <span id="hsl-hue-value" class="text-xs text-gray-500">当前：0</span>
+    </div>
+    <!-- 饱和度 -->
+    <div class="mb-2">
+      <label class="block text-sm text-gray-600 mb-1">饱和度（0~200）</label>
+      <input type="range" id="hsl-saturation" min="0" max="200" value="100" class="w-full accent-blue-500">
+      <span id="hsl-saturation-value" class="text-xs text-gray-500">当前：100</span>
+    </div>
+    <!-- 明度 -->
+    <div class="mb-3">
+      <label class="block text-sm text-gray-600 mb-1">明度（-100~100）</label>
+      <input type="range" id="hsl-lightness" min="-100" max="100" value="0" class="w-full accent-blue-500">
+      <span id="hsl-lightness-value" class="text-xs text-gray-500">当前：0</span>
+    </div>
+    <button id="hsl-apply" class="w-full py-2 bg-blue-500 text-white rounded hover:bg-blue-600">应用HSL</button>
+  </div>
+
+
+      <!-- 10. 色温参数面板 -->
+      <div class="param-item hidden" data-func="temp">
+        <h4 class="font-semibold text-gray-600 mb-2">色温设置</h4>
+        <label class="block text-gray-600 mb-1 text-sm">色温（-100~100）</label>
+        <input type="range" id="temp-slider" min="-100" max="100" value="0" class="w-full accent-blue-500">
+        <div class="flex justify-between text-sm text-gray-500 mt-1">
+          <span>冷色</span>
+          <span id="temp-value">当前：0</span>
+          <span>暖色</span>
+        </div>
+      </div>
+
+      <!-- 11. 色调参数面板 -->
+      <div class="param-item hidden" data-func="tint">
+        <h4 class="font-semibold text-gray-600 mb-2">色调设置</h4>
+        <label class="block text-gray-600 mb-1 text-sm">色调（-100~100）</label>
+        <input type="range" id="tint-slider" min="-100" max="100" value="0" class="w-full accent-blue-500">
+        <div class="flex justify-between text-sm text-gray-500 mt-1">
+          <span>绿色</span>
+          <span id="tint-value">当前：0</span>
+          <span>品红</span>
+        </div>
+      </div>
+
+      <!-- 12. 去雾参数面板（来自同学代码优化） -->
+      <div class="param-item hidden" data-func="dehaze">
+        <h4 class="font-semibold text-gray-600 mb-2">去雾设置</h4>
+        <label class="block text-gray-600 mb-1 text-sm">去雾强度（0~100）</label>
+        <input type="range" id="dehaze-slider" min="0" max="100" value="50" class="w-full accent-blue-500">
+        <div class="flex justify-between text-sm text-gray-500 mt-1">
+          <span>弱</span>
+          <span id="dehaze-value">当前：50</span>
+          <span>强</span>
+        </div>
+        <button id="dehaze-apply" class="mt-3 w-full py-2 bg-blue-500 text-white rounded hover:bg-blue-600">应用去雾</button>
+      </div>
+
+      <!-- 13. 水印参数面板（来自同学代码优化） -->
+      <div class="param-item hidden" data-func="watermark">
+        <h4 class="font-semibold text-gray-600 mb-2">水印设置</h4>
+        <label class="block text-gray-600 mb-2 text-sm font-semibold">水印类型</label>
+        <div class="flex gap-2 mb-3">
+          <button id="watermark-type-global" class="flex-1 px-3 py-2 border rounded hover:bg-gray-100 text-sm bg-blue-500 text-white">全局水印</button>
+          <button id="watermark-type-corner" class="flex-1 px-3 py-2 border rounded hover:bg-gray-100 text-sm">右下角水印</button>
+        </div>
+        <label class="block text-gray-600 mb-1 text-sm">字体大小（10~50px）</label>
+        <input type="range" id="watermark-font-size" min="10" max="50" value="20" class="w-full accent-blue-500">
+        <span id="watermark-font-size-value" class="text-sm text-gray-500">当前：20px</span>
+        <label class="block text-gray-600 mb-1 text-sm">水印文本</label>
+        <input type="text" id="watermark-text" placeholder="输入水印内容" class="w-full border border-gray-300 rounded px-2 py-1 mb-3 text-sm">
+        <label class="block text-gray-600 mb-1 text-sm">透明度（0~100）</label>
+        <input type="range" id="watermark-opacity" min="0" max="100" value="30" class="w-full accent-blue-500">
+        <span id="watermark-opacity-value" class="text-sm text-gray-500">当前：30%</span>
+        <button id="watermark-apply" class="mt-4 bg-blue-500 text-white rounded px-3 py-1 text-sm w-full">应用水印</button>
+      </div>
+
+     <!-- 文字参数面板（修改后）add_by刘翔 -->
+<!-- 文字参数面板中新增删除按钮 -->
+<div class="param-item" data-func="text">
+  <h3 class="text-lg font-semibold mb-4">文字参数</h3>
+  <div class="space-y-3">
+    <div>
+      <label class="block text-sm font-medium text-gray-700">文字内容</label>
+      <input type="text" id="text-content" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="预览文字">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700">字体选择</label>
+      <select id="text-font" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+        <option value="黑体">黑体</option>
+        <option value="宋体">宋体</option>
+        <option value="微软雅黑">微软雅黑</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700">文字颜色</label>
+      <input type="color" id="text-color" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="#000000">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700">字体大小 (px)</label>
+      <input type="number" id="text-size" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="36" min="12" max="100">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-gray-700">透明度 (0~100)</label>
+      <input type="range" id="text-opacity" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="100" min="0" max="100">
+      <p id="text-opacity-value" class="text-sm text-gray-500 mt-1">当前：100%</p>
+    </div>
+    <!-- 新增删除按钮 -->
+    <button id="delete-text-btn" class="mt-2 w-full py-2 bg-red-500 text-white rounded hover:bg-red-600">删除选中文字</button>
+    <div class="flex space-x-3">
+      <button id="add-text-btn" class="flex-1 py-2 bg-green-500 text-white rounded hover:bg-green-600">A 添加文本</button>
+    </div>
+  </div>
+</div>
+
+      <!-- 15. 美颜滤镜参数面板 -->
+      <div class="param-item hidden" data-func="beauty">
+        <h4 class="font-semibold text-gray-600 mb-2">精细美颜调整</h4>
+        <div class="mb-3">
+          <label class="block text-gray-600 mb-1 text-sm">磨皮强度（0~100）</label>
+          <input type="range" id="beauty-smooth" min="0" max="100" value="0" class="w-full accent-blue-500">
+          <div class="flex justify-between text-sm text-gray-500 mt-1">
+            <span>自然</span>
+            <span id="beauty-smooth-value">当前：0</span>
+            <span>强烈</span>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="block text-gray-600 mb-1 text-sm">美白强度（0~100）</label>
+          <input type="range" id="beauty-whiten" min="0" max="100" value="0" class="w-full accent-blue-500">
+          <div class="flex justify-between text-sm text-gray-500 mt-1">
+            <span>自然</span>
+            <span id="beauty-whiten-value">当前：0</span>
+            <span>白皙</span>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="block text-gray-600 mb-1 text-sm">大眼（0~100）</label>
+          <input type="range" id="beauty-eye-enlarge" min="0" max="100" value="0" class="w-full accent-blue-500">
+          <div class="flex justify-between text-sm text-gray-500 mt-1">
+            <span>原大小</span>
+            <span id="beauty-eye-enlarge-value">当前：0</span>
+            <span>放大</span>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="block text-gray-600 mb-1 text-sm">瘦脸强度（0~100）</label>
+          <input type="range" id="beauty-slim-face" min="0" max="100" value="0" class="w-full accent-blue-500">
+          <div class="flex justify-between text-sm text-gray-500 mt-1">
+            <span>自然</span>
+            <span id="beauty-slim-face-value">当前：0</span>
+            <span>紧致</span>
+          </div>
+        </div>
+        <div class="flex flex-col gap-2 mt-2">
+          <button id="onekey-beauty" class="w-full py-1.5 bg-pink-500 text-white rounded hover:bg-pink-600 text-sm">
+            <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>一键美颜（自动优化）
+          </button>
+          <button id="beauty-set-original" class="w-full py-1.5 border rounded hover:bg-gray-100 text-sm">
+            <i class="fa-solid fa-image mr-1"></i>设为原图（左→右同步）
+          </button>
+          <button id="beauty-reset" class="w-full py-1.5 border rounded hover:bg-gray-100 text-sm">
+            <i class="fa-solid fa-undo mr-1"></i>重置（右→左恢复）
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
